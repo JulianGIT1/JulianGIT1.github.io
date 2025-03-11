@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steak</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+        body { text-align: center; }
+        canvas { background: #eee; display: block; margin: auto; }
+        #dropButton { margin-top: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        .score-labels { display: flex; justify-content: center; position: absolute; bottom: 10px; width: 100%; }
+        .score-label { width: 60px; text-align: center; font-weight: bold; position: absolute; bottom: 0; color: white; }
+        #playerBalance { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Steak</h1>
+    <div id="playerBalance">Balance: $500</div>
+    <label for="ballValue">Set Ball Cost: </label>
+    <input type="number" id="ballValue" value="100" min="10" step="10">
+    <button id="dropButton">Drop Ball</button>
+    <canvas id="plinkoCanvas"></canvas>
+    <div class="score-labels" id="scoreLabels"></div>
+
+    <!-- PayPal Button -->
+    <div id="paypal-button-container"></div>
+
+    <!-- Stripe Payment Button -->
+    <button id="stripePayButton">More Balls</button>
+
+    <script>
+        const { Engine, Render, Runner, World, Bodies, Events } = Matter;
+        
+        const engine = Engine.create();
+        const world = engine.world;
+        const width = 600;
+        const height = 700;
+        const pegRadius = 5;
+        const rows = 10;
+        const spacing = width / (rows + 2);
+        
+        let playerBalance = 500;
+        
+        const render = Render.create({
+            canvas: document.getElementById('plinkoCanvas'),
+            engine: engine,
+            options: { width, height, wireframes: false }
+        });
+        
+        Render.run(render);
+        Runner.run(Runner.create(), engine);
+        
+        for (let row = 0; row < rows; row++) {
+            let cols = row + 3;
+            for (let col = 0; col < cols; col++) {
+                let x = (width / 2) - ((cols - 1) * spacing) / 2 + col * spacing;
+                let y = row * spacing + 100;
+                let peg = Bodies.circle(x, y, pegRadius, { isStatic: true, restitution: 0.6, render: { fillStyle: 'lightgrey' } });
+                World.add(world, peg);
+            }
+        }
+        
+        const leftWall = Bodies.rectangle(0, height / 2, 10, height, { isStatic: true });
+        const rightWall = Bodies.rectangle(width, height / 2, 10, height, { isStatic: true });
+        World.add(world, [leftWall, rightWall]);
+
+        const ground = Bodies.rectangle(width / 2, height - 10, width, 20, { isStatic: true });
+        World.add(world, ground);
+        
+        const bins = [];
+        const multipliers = [];
+        const scoreLabels = document.getElementById("scoreLabels");
+        
+        for (let i = 0; i < rows + 2; i++) {
+            let x = i * spacing + spacing / 2;
+            let multiplier;
+            let color;
+            
+            if (i === 0 || i === rows + 1) {
+                multiplier = 100;
+                color = 'yellow';
+            } else if (i === 1 || i === rows) {
+                multiplier = 5;
+                color = 'green';
+            } else if (i === 2 || i === rows - 1) {
+                multiplier = 2;
+                color = 'purple';
+            } else if (i === Math.floor((rows + 2) / 2) || i === Math.floor((rows + 2) / 2) - 1) {
+                multiplier = -0.5;
+                color = 'red';
+            } else if (i === Math.floor((rows + 2) / 2) - 2 || i === Math.floor((rows + 2) / 2) + 1) {
+                multiplier = 1;
+                color = 'orange';
+            } else {
+                multiplier = 0.5;
+                color = 'blue';
+            }
+            
+            let bin = Bodies.rectangle(x, height - 60, spacing * 0.8, 40, {
+                isStatic: true,
+                label: `bin-${i}`,
+                render: { fillStyle: color }
+            });
+            bins.push(bin);
+            multipliers.push(multiplier);
+            World.add(world, bin);
+            
+            let label = document.createElement("div");
+            label.classList.add("score-label");
+            label.textContent = `x${multiplier}`;
+            scoreLabels.appendChild(label);
+            label.style.left = `${x + 380}px`; 
+            label.style.bottom = "-150px"; 
+        }
+
+        function checkGameOver() {
+            if (playerBalance <= 0) {
+                alert("Game Over! Restarting...");
+                location.reload();
+            }
+        }
+
+        document.getElementById("dropButton").addEventListener("click", () => {
+            let ballCost = parseInt(document.getElementById("ballValue").value);
+            if (playerBalance >= ballCost) {
+                playerBalance -= ballCost;
+                document.getElementById("playerBalance").textContent = "Balance: $" + playerBalance;
+                let ball = Bodies.circle(width / 2 + (Math.random() * 40 - 20), 50, 10, { restitution: 0.6, label: "ball", frictionAir: 0.05 });
+                World.add(world, ball);
+                checkGameOver();
+            }
+        });
+
+        Events.on(engine, "afterUpdate", () => {
+            world.bodies.forEach(body => {
+                if (body.label === "ball" && body.speed < 0.1) {
+                    bins.forEach((bin, index) => {
+                        if (Matter.Bounds.overlaps(body.bounds, bin.bounds)) {
+                            playerBalance += Math.floor(parseInt(document.getElementById("ballValue").value) * multipliers[index]);
+                            document.getElementById("playerBalance").textContent = "Balance: $" + playerBalance;
+                            World.remove(world, body);
+                            checkGameOver();
+                        }
+                    });
+                }
+            });
+        });
+
+        // Stripe Payment Button Functionality
+        document.getElementById("stripePayButton").addEventListener("click", () => {
+            window.location.href = "https://buy.stripe.com/test_dR66qe58O5sO4E0cMN";
+        });
+
+        // PayPal Integration
+        paypal.Buttons({
+            createOrder: (data, actions) => {
+                return actions.order.create({
+                    purchase_units: [{
+                        amount: { value: "1.00" } 
+                    }]
+                });
+            },
+            onApprove: (data, actions) => {
+                return actions.order.capture().then(details => {
+                    alert("Payment Successful! You can now drop a ball.");
+                    playerBalance += 100; 
+                    document.getElementById("playerBalance").textContent = "Balance: $" + playerBalance;
+                });
+            }
+        }).render('#paypal-button-container');
+    </script>
+
+    <script src="https://www.paypal.com/sdk/js?client-id=YOUR_PAYPAL_CLIENT_ID"></script>
+</body>
+</html>
+
